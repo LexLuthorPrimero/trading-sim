@@ -7,7 +7,10 @@ RUN cd cobol && \
     cobc -x -o rsi rsi.cob && \
     cobc -x -o macd macd.cob && \
     cobc -x -o bollinger bollinger.cob && \
-    cobc -x -o atr atr.cob
+    cobc -x -o atr atr.cob && \
+    cobc -x -o stochastic stochastic.cob && \
+    cobc -x -o sma_cross sma_cross.cob && \
+    cobc -x -o trader trader.cob
 
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y gnucobol curl && rm -rf /var/lib/apt/lists/*
