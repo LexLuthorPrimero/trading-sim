@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional
-import subprocess, tempfile, os, json
+from typing import List, Optional, Callable, Dict, Any
+import functools, subprocess, tempfile, os, json
 from pathlib import Path
-from api.database import init_db, save_signal, get_signals, get_connection
+from api.database import init_db, save_signal, get_signals
 
 app = FastAPI(title="Trading Simulator API")
 COBOL_DIR = Path(os.environ.get("COBOL_DIR", "/app/cobol"))
@@ -17,11 +17,17 @@ class IndicatorRequest(BaseModel):
     d_period: Optional[int] = None
     symbol: str = "TEST"
 
-@app.on_event("startup")
-def startup():
-    init_db()
+def require_valid_prices(func: Callable):
+    @functools.wraps(func)
+    def wrapper(req: IndicatorRequest):
+        if not req.prices or len(req.prices) == 0:
+            raise HTTPException(status_code=400, detail="El campo 'prices' está vacío")
+        if not all(isinstance(p, (int, float)) and p > 0 for p in req.prices):
+            raise HTTPException(status_code=400, detail="Todos los precios deben ser numéricos y positivos")
+        return func(req)
+    return wrapper
 
-def run_cobol(program, input_data):
+def run_cobol(program: str, input_data: str) -> str:
     with tempfile.NamedTemporaryFile(mode='w', suffix='.dat', delete=False) as f:
         f.write(input_data)
         input_file = f.name
@@ -34,93 +40,77 @@ def run_cobol(program, input_data):
     finally:
         os.unlink(input_file)
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+IndicatorProcessor = Callable[[str], Dict[str, Any]]
 
-@app.post("/sma")
-def sma(req: IndicatorRequest):
-    # B-VALID: validar entrada
-    if not req.prices or len(req.prices) == 0:
-        raise HTTPException(status_code=400, detail="El campo prices esta vacio")
-    if not all(isinstance(p, (int, float)) and p > 0 for p in req.prices):
-        raise HTTPException(status_code=400, detail="Todos los precios deben ser numericos y positivos")
-    
-    data = run_cobol("sma", "\n".join(f"{p:.2f}" for p in req.prices))
-    val = float(data)
-    save_signal("SMA", req.symbol, val, req.window or 5, json.dumps(req.prices))
-    return {"sma": val, "window": req.window, "symbol": req.symbol}
+def make_indicator_endpoint(
+    indicator: str,
+    processor: IndicatorProcessor,
+    period_key: str = "period",
+    period_default: int = 14,
+    value_key: str = "value"
+) -> Callable:
+    """Factory de endpoints DRY: valida, ejecuta COBOL, procesa y persiste."""
+    @app.post(f"/{indicator}")
+    @require_valid_prices
+    @functools.wraps(processor)
+    def endpoint(req: IndicatorRequest):
+        data = run_cobol(indicator, "\n".join(f"{p:.2f}" for p in req.prices))
+        result = processor(data)
+        period = getattr(req, period_key, None) or period_default
+        save_signal(indicator.upper(), req.symbol, result.get(value_key, 0), period, json.dumps(req.prices))
+        return {**result, "symbol": req.symbol, period_key: period}
+    return endpoint
 
-@app.post("/rsi")
-def rsi(req: IndicatorRequest):
-    data = run_cobol("rsi", "\n".join(f"{p:.2f}" for p in req.prices))
-    val = float(data)
-    save_signal("RSI", req.symbol, val, req.period or 14, json.dumps(req.prices))
-    return {"rsi": val, "period": req.period, "symbol": req.symbol}
+def sma_processor(data: str) -> Dict[str, Any]:
+    return {"sma": float(data.strip())}
 
-@app.post("/macd")
-def macd(req: IndicatorRequest):
-    data = run_cobol("macd", "\n".join(f"{p:.2f}" for p in req.prices))
-    parts = data.split()
-    macd_line = float(parts[0]) if len(parts) > 0 else 0.0
-    signal_line = float(parts[1]) if len(parts) > 1 else 0.0
-    histogram = float(parts[2]) if len(parts) > 2 else 0.0
-    save_signal("MACD", req.symbol, macd_line, None, json.dumps(req.prices))
-    return {"macd_line": macd_line, "signal_line": signal_line, "histogram": histogram}
+def rsi_processor(data: str) -> Dict[str, Any]:
+    return {"rsi": float(data.strip())}
 
-@app.post("/bollinger")
-def bollinger(req: IndicatorRequest):
-    input_data = "\n".join(f"{p:.2f}" for p in req.prices)
-    data = run_cobol("bollinger", input_data)
+def macd_processor(data: str) -> Dict[str, Any]:
+    parts = data.strip().split()
+    return {
+        "macd_line": float(parts[0]) if len(parts) > 0 else 0.0,
+        "signal_line": float(parts[1]) if len(parts) > 1 else 0.0,
+        "histogram": float(parts[2]) if len(parts) > 2 else 0.0
+    }
+
+def bollinger_processor(data: str) -> Dict[str, Any]:
     lines = data.strip().split('\n')
     output = []
     for line in lines:
         parts = line.split()
         if len(parts) == 3:
             output.append({"price": float(parts[0]), "upper": float(parts[1]), "lower": float(parts[2])})
-    save_signal("BOLLINGER", req.symbol, output[-1]["upper"] if output else 0, req.period or 20, json.dumps(req.prices))
-    return {"bollinger": output, "period": req.period, "symbol": req.symbol}
+    return {"bollinger": output, "value": output[-1]["upper"] if output else 0}
 
-@app.post("/atr")
-def atr(req: IndicatorRequest):
-    data = run_cobol("atr", "\n".join(f"{p:.2f}" for p in req.prices))
+def atr_processor(data: str) -> Dict[str, Any]:
     values = [float(x) for x in data.strip().split('\n') if x]
-    save_signal("ATR", req.symbol, values[-1] if values else 0, req.period or 14, json.dumps(req.prices))
-    return {"atr": values, "period": req.period, "symbol": req.symbol}
+    return {"atr": values, "value": values[-1] if values else 0}
 
-@app.post("/stochastic")
-def stochastic(req: IndicatorRequest):
-    data = run_cobol("stochastic", "\n".join(f"{p:.2f}" for p in req.prices))
+def stochastic_processor(data: str) -> Dict[str, Any]:
     lines = data.strip().split('\n')
     output = []
     for line in lines:
         parts = line.split()
         if len(parts) == 2:
             output.append({"pct_k": float(parts[0]), "pct_d": float(parts[1])})
-    save_signal("STOCHASTIC", req.symbol, output[-1]["pct_k"] if output else 0, req.k_period or 14, json.dumps(req.prices))
-    return {"stochastic": output, "k_period": req.k_period, "d_period": req.d_period, "symbol": req.symbol}
+    return {"stochastic": output, "value": output[-1]["pct_k"] if output else 0}
 
-@app.post("/decision")
-def decision(symbol: str = "MSFT", period: str = "6mo"):
-    try:
-        import yfinance as yf
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period)
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No data")
-        closes = df['Close'].tolist()
-        macd_val = run_cobol("macd", "\n".join(f"{p:.2f}" for p in closes[-26:]))
-        parts = macd_val.split()
-        macd_line = float(parts[0]) if parts else 0.0
-        if macd_line > 0.01:
-            signal = "BUY"
-        elif macd_line < -0.01:
-            signal = "SELL"
-        else:
-            signal = "HOLD"
-        return {"symbol": symbol, "signal": signal, "macd": macd_line}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+make_indicator_endpoint("sma", sma_processor, period_key="window", period_default=5)
+make_indicator_endpoint("rsi", rsi_processor, period_key="period", period_default=14)
+make_indicator_endpoint("macd", macd_processor, period_key="period", period_default=12, value_key="macd_line")
+make_indicator_endpoint("bollinger", bollinger_processor, period_key="period", period_default=20, value_key="value")
+make_indicator_endpoint("atr", atr_processor, period_key="period", period_default=14, value_key="value")
+make_indicator_endpoint("stochastic", stochastic_processor, period_key="k_period", period_default=14, value_key="value")
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.get("/signals")
 def list_signals(indicator: Optional[str] = None, limit: int = 50):
