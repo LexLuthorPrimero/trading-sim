@@ -1,5 +1,6 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. STOCHASTIC.
+      * B-DEBUG + B-FSTATUS + B-NAMING
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
@@ -26,7 +27,7 @@
               10 WS-HIGH-COMP3   PIC 9(5)V99 COMP-3.
               10 WS-LOW-COMP3    PIC 9(5)V99 COMP-3.
               10 WS-CLOSE-COMP3  PIC 9(5)V99 COMP-3.
-       01  WS-COUNT           PIC 9(4) COMP.
+       01  WS-COUNT           PIC 9(4) COMP VALUE 0.
        01  WS-I               PIC 9(4) COMP.
        01  WS-J               PIC 9(4) COMP.
        01  WS-K-PERIOD        PIC 9(2) COMP VALUE 14.
@@ -38,45 +39,64 @@
        01  WS-SUM-D           PIC 9(5)V99 COMP-3.
        01  WS-START-IDX       PIC 9(4) COMP.
        01  WS-START-D         PIC 9(4) COMP.
+       01  WS-EXIT-CODE       PIC S9(4) COMP VALUE 0.
+       01  WS-ERROR-MSG       PIC X(100).
        PROCEDURE DIVISION.
        MAIN.
-           PERFORM INPUT-PRICES.
-           IF WS-COUNT < WS-K-PERIOD
-               DISPLAY "ERROR: Need at least " WS-K-PERIOD " prices"
-               PERFORM CLEANUP
-               STOP RUN
-           END-IF.
-           PERFORM PROCESS-STOCH.
-           PERFORM CLEANUP.
-           STOP RUN.
-
-       INPUT-PRICES.
-           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE.
+           DISPLAY "[DEBUG] 1000-INICIO - Programa STOCHASTIC iniciado"
+           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
-           END-IF.
-           OPEN INPUT FD-PRICES-FILE.
-           IF NOT WS-PRICES-OK
-               DISPLAY "ERROR: Cannot open " WS-PRICES-PATH
+           END-IF
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
+               WS-PRICES-PATH
+           PERFORM 2000-LEER-PRECIOS
+           IF WS-EXIT-CODE NOT = 0
+               PERFORM 9000-FINALIZAR
                STOP RUN
-           END-IF.
-           MOVE 0 TO WS-COUNT.
+           END-IF
+           DISPLAY "[DEBUG] 3000-CALCULAR-STOCH - Procesando " 
+               WS-COUNT " precios con K=" WS-K-PERIOD " D=" WS-D-PERIOD
+           PERFORM 3000-CALCULAR-STOCH
+           DISPLAY "[DEBUG] 9000-FINALIZAR - "
+                   "Programa STOCHASTIC finalizado"
+           PERFORM 9000-FINALIZAR
+           STOP RUN.
+
+       2000-LEER-PRECIOS.
+           OPEN INPUT FD-PRICES-FILE
+           IF NOT WS-PRICES-OK
+               PERFORM 9999-MANEJAR-ERROR-FS
+           END-IF
+           IF WS-EXIT-CODE NOT = 0
+               EXIT PARAGRAPH
+           END-IF
+           MOVE 0 TO WS-COUNT
            PERFORM UNTIL WS-PRICES-EOF
                READ FD-PRICES-FILE INTO FD-PRICE-RECORD
-                   AT END SET WS-PRICES-EOF TO TRUE
+                   AT END 
+                       SET WS-PRICES-EOF TO TRUE
                    NOT AT END
                        ADD 1 TO WS-COUNT
-                       COMPUTE WS-HIGH-COMP3(WS-COUNT) = 
+                       COMPUTE WS-HIGH-COMP3(WS-COUNT) ROUNDED = 
                            FUNCTION NUMVAL(FD-PRICE-HIGH-RAW)
-                       COMPUTE WS-LOW-COMP3(WS-COUNT) = 
+                       COMPUTE WS-LOW-COMP3(WS-COUNT) ROUNDED = 
                            FUNCTION NUMVAL(FD-PRICE-LOW-RAW)
-                       COMPUTE WS-CLOSE-COMP3(WS-COUNT) = 
+                       COMPUTE WS-CLOSE-COMP3(WS-COUNT) ROUNDED = 
                            FUNCTION NUMVAL(FD-PRICE-CLOSE-RAW)
                END-READ
-           END-PERFORM.
-           CLOSE FD-PRICES-FILE.
+           END-PERFORM
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leidos " WS-COUNT 
+               " registros"
+           CLOSE FD-PRICES-FILE
+           IF WS-COUNT = 0
+               MOVE "ERROR: Archivo vacío" TO WS-ERROR-MSG
+               DISPLAY WS-ERROR-MSG
+               MOVE 1 TO WS-EXIT-CODE
+           END-IF
+           EXIT.
 
-       PROCESS-STOCH.
+       3000-CALCULAR-STOCH.
            PERFORM VARYING WS-I FROM WS-K-PERIOD BY 1
                    UNTIL WS-I > WS-COUNT
                MOVE WS-HIGH-COMP3(WS-I) TO WS-HIGHEST
@@ -91,7 +111,7 @@
                        MOVE WS-LOW-COMP3(WS-J) TO WS-LOWEST
                    END-IF
                END-PERFORM
-               COMPUTE WS-PCT-K = 100 *
+               COMPUTE WS-PCT-K ROUNDED = 100 *
                    (WS-CLOSE-COMP3(WS-I) - WS-LOWEST) /
                    (WS-HIGHEST - WS-LOWEST + 0.0001)
                MOVE 0 TO WS-SUM-D
@@ -100,9 +120,26 @@
                        UNTIL WS-J > WS-I
                    ADD WS-PCT-K TO WS-SUM-D
                END-PERFORM
-               COMPUTE WS-PCT-D = WS-SUM-D / WS-D-PERIOD
+               COMPUTE WS-PCT-D ROUNDED = WS-SUM-D / WS-D-PERIOD
                DISPLAY WS-PCT-K " " WS-PCT-D
-           END-PERFORM.
+           END-PERFORM
+           EXIT.
 
-       CLEANUP.
-           CLOSE FD-PRICES-FILE.
+       9000-FINALIZAR.
+           CLOSE FD-PRICES-FILE
+           EXIT.
+
+       9999-MANEJAR-ERROR-FS.
+           EVALUATE WS-PRICES-STATUS
+               WHEN "35"
+                   MOVE "ERROR: Archivo no encontrado" TO WS-ERROR-MSG
+               WHEN "39"
+                   MOVE "ERROR: Conflicto de atributos" TO WS-ERROR-MSG
+               WHEN OTHER
+                   STRING "ERROR: FILE STATUS = " WS-PRICES-STATUS
+                       INTO WS-ERROR-MSG
+           END-EVALUATE
+           DISPLAY WS-ERROR-MSG
+           MOVE 1 TO WS-EXIT-CODE
+           CLOSE FD-PRICES-FILE
+           EXIT.

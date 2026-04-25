@@ -1,5 +1,7 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. RSI.
+      * Indicador: Relative Strength Index
+      * Versión:   B-DEBUG + B-FSTATUS + B-NAMING
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
@@ -20,7 +22,7 @@
            05 WS-PRICE-ENTRY OCCURS 1000 TIMES
               INDEXED BY WS-PRICE-IDX.
               10 WS-PRICE-COMP3  PIC 9(5)V99 COMP-3.
-       01  WS-COUNT           PIC 9(4) COMP.
+       01  WS-COUNT           PIC 9(4) COMP VALUE 0.
        01  WS-I               PIC 9(4) COMP.
        01  WS-PERIOD          PIC 9(2) COMP VALUE 14.
        01  WS-GAIN            PIC 9(7)V99 COMP-3 VALUE 0.
@@ -32,42 +34,61 @@
        01  WS-CHANGE          PIC S9(7)V99 COMP-3.
        01  WS-DIFF            PIC 9(7)V99 COMP-3.
        01  WS-START-IDX       PIC 9(4) COMP.
+       01  WS-EXIT-CODE       PIC S9(4) COMP VALUE 0.
+       01  WS-ERROR-MSG       PIC X(100).
        PROCEDURE DIVISION.
        MAIN.
-           PERFORM INPUT-PRICES.
-           IF WS-COUNT <= WS-PERIOD
-               DISPLAY "ERROR: Need at least " WS-PERIOD " prices"
-               PERFORM CLEANUP
-               STOP RUN
-           END-IF.
-           PERFORM PROCESS-RSI.
-           PERFORM CLEANUP.
-           STOP RUN.
-
-       INPUT-PRICES.
-           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE.
+           DISPLAY "[DEBUG] 1000-INICIO - Programa RSI iniciado"
+           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
-           END-IF.
-           OPEN INPUT FD-PRICES-FILE.
-           IF NOT WS-PRICES-OK
-               DISPLAY "ERROR: Cannot open " WS-PRICES-PATH
+           END-IF
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
+               WS-PRICES-PATH
+           PERFORM 2000-LEER-PRECIOS
+           IF WS-EXIT-CODE NOT = 0
+               PERFORM 9000-FINALIZAR
                STOP RUN
-           END-IF.
-           MOVE 0 TO WS-COUNT.
+           END-IF
+           DISPLAY "[DEBUG] 3000-CALCULAR-RSI - Procesando " WS-COUNT 
+               " precios con periodo " WS-PERIOD
+           PERFORM 3000-CALCULAR-RSI
+           DISPLAY "[DEBUG] 9000-FINALIZAR - Programa RSI finalizado"
+           PERFORM 9000-FINALIZAR
+           STOP RUN.
+
+       2000-LEER-PRECIOS.
+           OPEN INPUT FD-PRICES-FILE
+           IF NOT WS-PRICES-OK
+               PERFORM 9999-MANEJAR-ERROR-FS
+           END-IF
+           IF WS-EXIT-CODE NOT = 0
+               EXIT PARAGRAPH
+           END-IF
+           MOVE 0 TO WS-COUNT
            PERFORM UNTIL WS-PRICES-EOF
                READ FD-PRICES-FILE INTO FD-PRICE-RECORD
-                   AT END SET WS-PRICES-EOF TO TRUE
+                   AT END 
+                       SET WS-PRICES-EOF TO TRUE
                    NOT AT END
                        ADD 1 TO WS-COUNT
-                       COMPUTE WS-PRICE-COMP3(WS-COUNT) = 
+                       COMPUTE WS-PRICE-COMP3(WS-COUNT) ROUNDED = 
                            FUNCTION NUMVAL(FD-PRICE-RAW)
                END-READ
-           END-PERFORM.
-           CLOSE FD-PRICES-FILE.
+           END-PERFORM
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leidos " WS-COUNT 
+               " registros"
+           CLOSE FD-PRICES-FILE
+           IF WS-COUNT = 0
+               MOVE "ERROR: Archivo vacío" TO WS-ERROR-MSG
+               DISPLAY WS-ERROR-MSG
+               MOVE 1 TO WS-EXIT-CODE
+           END-IF
+           EXIT.
 
-       PROCESS-RSI.
-           MOVE 0 TO WS-GAIN. MOVE 0 TO WS-LOSS.
+       3000-CALCULAR-RSI.
+           MOVE 0 TO WS-GAIN
+           MOVE 0 TO WS-LOSS
            PERFORM VARYING WS-I FROM 2 BY 1
                    UNTIL WS-I > WS-PERIOD + 1
                COMPUTE WS-CHANGE = WS-PRICE-COMP3(WS-I) - 
@@ -78,36 +99,53 @@
                    COMPUTE WS-DIFF = 0 - WS-CHANGE
                    ADD WS-DIFF TO WS-LOSS
                END-IF
-           END-PERFORM.
-           COMPUTE WS-AVG-GAIN = WS-GAIN / WS-PERIOD.
-           COMPUTE WS-AVG-LOSS = WS-LOSS / WS-PERIOD.
-           COMPUTE WS-START-IDX = WS-PERIOD + 2.
+           END-PERFORM
+           COMPUTE WS-AVG-GAIN ROUNDED = WS-GAIN / WS-PERIOD
+           COMPUTE WS-AVG-LOSS ROUNDED = WS-LOSS / WS-PERIOD
+           COMPUTE WS-START-IDX = WS-PERIOD + 2
            PERFORM VARYING WS-I FROM WS-START-IDX BY 1
                    UNTIL WS-I > WS-COUNT
                COMPUTE WS-CHANGE = WS-PRICE-COMP3(WS-I) - 
                    WS-PRICE-COMP3(WS-I - 1)
                IF WS-CHANGE > 0
-                   COMPUTE WS-AVG-GAIN = 
+                   COMPUTE WS-AVG-GAIN ROUNDED = 
                        (WS-AVG-GAIN * (WS-PERIOD - 1) + WS-CHANGE) 
                        / WS-PERIOD
-                   COMPUTE WS-AVG-LOSS = 
+                   COMPUTE WS-AVG-LOSS ROUNDED = 
                        WS-AVG-LOSS * (WS-PERIOD - 1) / WS-PERIOD
                ELSE
                    COMPUTE WS-DIFF = 0 - WS-CHANGE
-                   COMPUTE WS-AVG-GAIN = 
+                   COMPUTE WS-AVG-GAIN ROUNDED = 
                        WS-AVG-GAIN * (WS-PERIOD - 1) / WS-PERIOD
-                   COMPUTE WS-AVG-LOSS = 
+                   COMPUTE WS-AVG-LOSS ROUNDED = 
                        (WS-AVG-LOSS * (WS-PERIOD - 1) + WS-DIFF) 
                        / WS-PERIOD
                END-IF
-           END-PERFORM.
+           END-PERFORM
            IF WS-AVG-LOSS = 0
                DISPLAY "100"
            ELSE
-               COMPUTE WS-RS = WS-AVG-GAIN / WS-AVG-LOSS
-               COMPUTE WS-RSI = 100 - (100 / (1 + WS-RS))
+               COMPUTE WS-RS ROUNDED = WS-AVG-GAIN / WS-AVG-LOSS
+               COMPUTE WS-RSI ROUNDED = 100 - (100 / (1 + WS-RS))
                DISPLAY WS-RSI
-           END-IF.
+           END-IF
+           EXIT.
 
-       CLEANUP.
-           CLOSE FD-PRICES-FILE.
+       9000-FINALIZAR.
+           CLOSE FD-PRICES-FILE
+           EXIT.
+
+       9999-MANEJAR-ERROR-FS.
+           EVALUATE WS-PRICES-STATUS
+               WHEN "35"
+                   MOVE "ERROR: Archivo no encontrado" TO WS-ERROR-MSG
+               WHEN "39"
+                   MOVE "ERROR: Conflicto de atributos" TO WS-ERROR-MSG
+               WHEN OTHER
+                   STRING "ERROR: FILE STATUS = " WS-PRICES-STATUS
+                       INTO WS-ERROR-MSG
+           END-EVALUATE
+           DISPLAY WS-ERROR-MSG
+           MOVE 1 TO WS-EXIT-CODE
+           CLOSE FD-PRICES-FILE
+           EXIT.

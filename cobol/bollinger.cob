@@ -1,5 +1,6 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. BOLLINGER.
+      * B-DEBUG + B-FSTATUS + B-NAMING
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
@@ -20,7 +21,7 @@
            05 WS-PRICE-ENTRY OCCURS 1000 TIMES
               INDEXED BY WS-PRICE-IDX.
               10 WS-PRICE-COMP3  PIC 9(5)V99 COMP-3.
-       01  WS-COUNT           PIC 9(4) COMP.
+       01  WS-COUNT           PIC 9(4) COMP VALUE 0.
        01  WS-I               PIC 9(4) COMP.
        01  WS-J               PIC 9(4) COMP.
        01  WS-PERIOD          PIC 9(2) COMP VALUE 20.
@@ -33,41 +34,60 @@
        01  WS-LOWER           PIC 9(5)V99.
        01  WS-DIFF            PIC S9(5)V99 COMP-3.
        01  WS-DIFF-SQ         PIC 9(10)V99 COMP-3.
+       01  WS-EXIT-CODE       PIC S9(4) COMP VALUE 0.
+       01  WS-ERROR-MSG       PIC X(100).
        PROCEDURE DIVISION.
        MAIN.
-           PERFORM INPUT-PRICES.
-           IF WS-COUNT < WS-PERIOD
-               DISPLAY "ERROR: Need at least " WS-PERIOD " prices"
-               PERFORM CLEANUP
-               STOP RUN
-           END-IF.
-           PERFORM PROCESS-BOLL.
-           PERFORM CLEANUP.
-           STOP RUN.
-
-       INPUT-PRICES.
-           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE.
+           DISPLAY "[DEBUG] 1000-INICIO - Programa BOLLINGER iniciado"
+           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
-           END-IF.
-           OPEN INPUT FD-PRICES-FILE.
-           IF NOT WS-PRICES-OK
-               DISPLAY "ERROR: Cannot open " WS-PRICES-PATH
+           END-IF
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
+               WS-PRICES-PATH
+           PERFORM 2000-LEER-PRECIOS
+           IF WS-EXIT-CODE NOT = 0
+               PERFORM 9000-FINALIZAR
                STOP RUN
-           END-IF.
-           MOVE 0 TO WS-COUNT.
+           END-IF
+           DISPLAY "[DEBUG] 3000-CALCULAR-BOLLINGER - Procesando " 
+               WS-COUNT " precios con periodo " WS-PERIOD
+           PERFORM 3000-CALCULAR-BOLLINGER
+           DISPLAY "[DEBUG] 9000-FINALIZAR - "
+                   "Programa BOLLINGER finalizado"
+           PERFORM 9000-FINALIZAR
+           STOP RUN.
+
+       2000-LEER-PRECIOS.
+           OPEN INPUT FD-PRICES-FILE
+           IF NOT WS-PRICES-OK
+               PERFORM 9999-MANEJAR-ERROR-FS
+           END-IF
+           IF WS-EXIT-CODE NOT = 0
+               EXIT PARAGRAPH
+           END-IF
+           MOVE 0 TO WS-COUNT
            PERFORM UNTIL WS-PRICES-EOF
                READ FD-PRICES-FILE INTO FD-PRICE-RECORD
-                   AT END SET WS-PRICES-EOF TO TRUE
+                   AT END 
+                       SET WS-PRICES-EOF TO TRUE
                    NOT AT END
                        ADD 1 TO WS-COUNT
-                       COMPUTE WS-PRICE-COMP3(WS-COUNT) = 
+                       COMPUTE WS-PRICE-COMP3(WS-COUNT) ROUNDED = 
                            FUNCTION NUMVAL(FD-PRICE-RAW)
                END-READ
-           END-PERFORM.
-           CLOSE FD-PRICES-FILE.
+           END-PERFORM
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leidos " WS-COUNT 
+               " registros"
+           CLOSE FD-PRICES-FILE
+           IF WS-COUNT = 0
+               MOVE "ERROR: Archivo vacío" TO WS-ERROR-MSG
+               DISPLAY WS-ERROR-MSG
+               MOVE 1 TO WS-EXIT-CODE
+           END-IF
+           EXIT.
 
-       PROCESS-BOLL.
+       3000-CALCULAR-BOLLINGER.
            PERFORM VARYING WS-I FROM WS-PERIOD BY 1
                    UNTIL WS-I > WS-COUNT
                MOVE 0 TO WS-SUM
@@ -76,20 +96,37 @@
                        UNTIL WS-J > WS-I
                    ADD WS-PRICE-COMP3(WS-J) TO WS-SUM
                END-PERFORM
-               COMPUTE WS-SMA = WS-SUM / WS-PERIOD
+               COMPUTE WS-SMA ROUNDED = WS-SUM / WS-PERIOD
                MOVE 0 TO WS-VARIANCE
                PERFORM VARYING WS-J FROM WS-START-IDX BY 1
                        UNTIL WS-J > WS-I
                    COMPUTE WS-DIFF = WS-PRICE-COMP3(WS-J) - WS-SMA
-                   COMPUTE WS-DIFF-SQ = WS-DIFF * WS-DIFF
+                   COMPUTE WS-DIFF-SQ ROUNDED = WS-DIFF * WS-DIFF
                    ADD WS-DIFF-SQ TO WS-VARIANCE
                END-PERFORM
-               COMPUTE WS-VARIANCE = WS-VARIANCE / WS-PERIOD
+               COMPUTE WS-VARIANCE ROUNDED = WS-VARIANCE / WS-PERIOD
                COMPUTE WS-STD-DEV = FUNCTION SQRT(WS-VARIANCE)
-               COMPUTE WS-UPPER = WS-SMA + (2 * WS-STD-DEV)
-               COMPUTE WS-LOWER = WS-SMA - (2 * WS-STD-DEV)
+               COMPUTE WS-UPPER ROUNDED = WS-SMA + (2 * WS-STD-DEV)
+               COMPUTE WS-LOWER ROUNDED = WS-SMA - (2 * WS-STD-DEV)
                DISPLAY WS-PRICE-COMP3(WS-I) " " WS-UPPER " " WS-LOWER
-           END-PERFORM.
+           END-PERFORM
+           EXIT.
 
-       CLEANUP.
-           CLOSE FD-PRICES-FILE.
+       9000-FINALIZAR.
+           CLOSE FD-PRICES-FILE
+           EXIT.
+
+       9999-MANEJAR-ERROR-FS.
+           EVALUATE WS-PRICES-STATUS
+               WHEN "35"
+                   MOVE "ERROR: Archivo no encontrado" TO WS-ERROR-MSG
+               WHEN "39"
+                   MOVE "ERROR: Conflicto de atributos" TO WS-ERROR-MSG
+               WHEN OTHER
+                   STRING "ERROR: FILE STATUS = " WS-PRICES-STATUS
+                       INTO WS-ERROR-MSG
+           END-EVALUATE
+           DISPLAY WS-ERROR-MSG
+           MOVE 1 TO WS-EXIT-CODE
+           CLOSE FD-PRICES-FILE
+           EXIT.
