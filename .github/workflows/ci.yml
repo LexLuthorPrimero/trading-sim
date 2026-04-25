@@ -1,0 +1,16 @@
+name: Trading Sim CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar GnuCOBOL
+        run: sudo apt-get update && sudo apt-get install -y gnucobol
+      - name: Compilar COBOL
+        run: cd cobol && cobc -x -o sma sma.cob
+      - name: Tests Python
+        run: |
+          pip install fastapi uvicorn pytest httpx
+          export COBOL_DIR=$(pwd)/cobol
+          python -m pytest tests/ -v
