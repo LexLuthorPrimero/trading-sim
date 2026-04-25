@@ -5,12 +5,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - name: Instalar GnuCOBOL
         run: sudo apt-get update && sudo apt-get install -y gnucobol
-      - name: Compilar COBOL
-        run: cd cobol && cobc -x -o sma sma.cob
-      - name: Tests Python
+      
+      - name: Instalar shellcheck
+        run: sudo apt-get install -y shellcheck
+      
+      - name: Validar scripts bash con shellcheck
+        run: shellcheck auto_signal.sh
+      
+      - name: Compilar todos los indicadores COBOL
         run: |
-          pip install fastapi uvicorn pytest httpx
+          cd cobol
+          cobc -x -o sma sma.cob
+          cobc -x -o rsi rsi.cob
+          cobc -x -o macd macd.cob
+          cobc -x -o bollinger bollinger.cob
+          cobc -x -o atr atr.cob
+          cobc -x -o stochastic stochastic.cob
+      
+      - name: Verificar que los binarios existen
+        run: |
+          for prog in sma rsi macd bollinger atr stochastic; do
+            test -f cobol/$prog && echo "✅ $prog" || { echo "❌ $prog"; exit 1; }
+          done
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Instalar dependencias Python
+        run: pip install fastapi uvicorn pydantic pytest httpx
+      
+      - name: Ejecutar tests unitarios (mock)
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python -m pytest tests/test_unit.py -v
+      
+      - name: Ejecutar tests de integración (COBOL real)
+        run: |
           export COBOL_DIR=$(pwd)/cobol
-          python -m pytest tests/ -v
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python -m pytest tests/test_integration.py -v
