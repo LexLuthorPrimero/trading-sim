@@ -1,0 +1,9 @@
+[2026-04-25 13:00:01] Descargando datos de AAPL...
+Traceback (most recent call last):
+  File "/home/lucas/trading-sim/fetch_data.py", line 29, in <module>
+    main()
+    ~~~~^^
+  File "/home/lucas/trading-sim/fetch_data.py", line 22, in main
+    with open(prices_file, "w") as f:
+         ~~~~^^^^^^^^^^^^^^^^^^
+IsADirectoryError: [Errno 21] Is a directory: '/home/lucas/trading-sim/prices.dat'
