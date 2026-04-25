@@ -1,6 +1,7 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. STOCHASTIC.
-      * B-DEBUG + B-FSTATUS + B-NAMING
+      * Indicador: Stochastic Oscillator
+      * Versión:   B-COPY + B-DEBUG + B-FSTATUS + B-NAMING
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
@@ -50,7 +51,7 @@
            END-IF
            DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
                WS-PRICES-PATH
-           PERFORM 2000-LEER-PRECIOS
+           COPY WS-PRICES-LOAD-HLC.
            IF WS-EXIT-CODE NOT = 0
                PERFORM 9000-FINALIZAR
                STOP RUN
@@ -62,39 +63,6 @@
                    "Programa STOCHASTIC finalizado"
            PERFORM 9000-FINALIZAR
            STOP RUN.
-
-       2000-LEER-PRECIOS.
-           OPEN INPUT FD-PRICES-FILE
-           IF NOT WS-PRICES-OK
-               PERFORM 9999-MANEJAR-ERROR-FS
-           END-IF
-           IF WS-EXIT-CODE NOT = 0
-               EXIT PARAGRAPH
-           END-IF
-           MOVE 0 TO WS-COUNT
-           PERFORM UNTIL WS-PRICES-EOF
-               READ FD-PRICES-FILE INTO FD-PRICE-RECORD
-                   AT END 
-                       SET WS-PRICES-EOF TO TRUE
-                   NOT AT END
-                       ADD 1 TO WS-COUNT
-                       COMPUTE WS-HIGH-COMP3(WS-COUNT) ROUNDED = 
-                           FUNCTION NUMVAL(FD-PRICE-HIGH-RAW)
-                       COMPUTE WS-LOW-COMP3(WS-COUNT) ROUNDED = 
-                           FUNCTION NUMVAL(FD-PRICE-LOW-RAW)
-                       COMPUTE WS-CLOSE-COMP3(WS-COUNT) ROUNDED = 
-                           FUNCTION NUMVAL(FD-PRICE-CLOSE-RAW)
-               END-READ
-           END-PERFORM
-           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leidos " WS-COUNT 
-               " registros"
-           CLOSE FD-PRICES-FILE
-           IF WS-COUNT = 0
-               MOVE "ERROR: Archivo vacío" TO WS-ERROR-MSG
-               DISPLAY WS-ERROR-MSG
-               MOVE 1 TO WS-EXIT-CODE
-           END-IF
-           EXIT.
 
        3000-CALCULAR-STOCH.
            PERFORM VARYING WS-I FROM WS-K-PERIOD BY 1
