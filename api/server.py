@@ -113,3 +113,67 @@ def health():
 @app.get("/signals")
 def list_signals(indicator: Optional[str] = None, limit: int = 50):
     return get_signals(indicator, limit)
+
+# ===== Integración con Alpaca Markets =====
+
+import os
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.models import TradeAccount
+
+ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
+ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
+ALPACA_PAPER = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+
+trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
+
+@app.get("/account")
+def get_account():
+    """Obtiene información de la cuenta de Alpaca."""
+    if not ALPACA_API_KEY:
+        raise HTTPException(status_code=500, detail="ALPACA_API_KEY no configurada")
+    try:
+        account = trading_client.get_account()
+        return {
+            "id": account.id,
+            "equity": account.equity,
+            "cash": account.cash,
+            "buying_power": account.buying_power,
+            "status": account.status,
+            "paper": ALPACA_PAPER
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/trade-signal")
+def execute_trade_signal(symbol: str = "AAPL", signal: str = "HOLD"):
+    """Ejecuta una orden de compra/venta según la señal de COBOL."""
+    if not ALPACA_API_KEY:
+        raise HTTPException(status_code=500, detail="ALPACA_API_KEY no configurada")
+    
+    if signal == "HOLD":
+        return {"status": "HOLD", "symbol": symbol}
+    
+    try:
+        side = OrderSide.BUY if signal == "BUY" else OrderSide.SELL
+        order_data = MarketOrderRequest(
+            symbol=symbol,
+            qty=1,
+            side=side,
+            time_in_force=TimeInForce.DAY
+        )
+        order = trading_client.submit_order(order_data)
+        save_signal("TRADE", symbol, 0, 0, json.dumps({
+            "signal": signal,
+            "order_id": str(order.id),
+            "status": str(order.status)
+        }))
+        return {
+            "status": "ORDER_SUBMITTED",
+            "signal": signal,
+            "symbol": symbol,
+            "order_id": str(order.id)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

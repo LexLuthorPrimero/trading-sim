@@ -48,6 +48,13 @@
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
            END-IF
+           IF WS-PRICES-PATH = SPACES
+               MOVE "ERROR: Ruta vacía" TO WS-ERROR-MSG
+               DISPLAY WS-ERROR-MSG
+               MOVE 1 TO WS-EXIT-CODE
+               PERFORM 9000-FINALIZAR
+               STOP RUN
+           END-IF
            DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
                WS-PRICES-PATH
            COPY WS-PRICES-LOAD.

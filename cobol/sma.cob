@@ -1,7 +1,6 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. SMA.
-      * Indicador: Media Móvil Simple
-      * Versión:   B-COPY + B-DEBUG + B-FSTATUS + B-NAMING
+      * B-COPY + B-DEBUG + B-FSTATUS + B-NAMING + B-EVALUATE + B-VALID
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
@@ -37,6 +36,13 @@
            ACCEPT WS-PRICES-PATH FROM COMMAND-LINE
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
+           END-IF
+           IF WS-PRICES-PATH = SPACES
+               MOVE "ERROR: Ruta vacía" TO WS-ERROR-MSG
+               DISPLAY WS-ERROR-MSG
+               MOVE 1 TO WS-EXIT-CODE
+               PERFORM 9000-FINALIZAR
+               STOP RUN
            END-IF
            DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
                WS-PRICES-PATH
@@ -75,6 +81,8 @@
                    MOVE "ERROR: Archivo no encontrado" TO WS-ERROR-MSG
                WHEN "39"
                    MOVE "ERROR: Conflicto de atributos" TO WS-ERROR-MSG
+               WHEN "30"
+                   MOVE "ERROR: Error permanente de I/O" TO WS-ERROR-MSG
                WHEN OTHER
                    STRING "ERROR: FILE STATUS = " WS-PRICES-STATUS
                        INTO WS-ERROR-MSG

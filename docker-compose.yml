@@ -5,11 +5,12 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
-      - ./prices.dat:/app/prices.dat
-      - ./run_backtest.py:/app/run_backtest.py
     environment:
       - COBOL_DIR=/app/cobol
       - DB_PATH=/app/data/trading.db
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - ALPACA_PAPER=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
