@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Callable, Dict, Any
-import functools, subprocess, tempfile, os, json
+import subprocess, tempfile, os, json
 from pathlib import Path
 from api.database import init_db, save_signal, get_signals
 
@@ -17,17 +17,8 @@ class IndicatorRequest(BaseModel):
     d_period: Optional[int] = None
     symbol: str = "TEST"
 
-def require_valid_prices(func: Callable):
-    @functools.wraps(func)
-    def wrapper(req: IndicatorRequest):
-        if not req.prices or len(req.prices) == 0:
-            raise HTTPException(status_code=400, detail="El campo 'prices' está vacío")
-        if not all(isinstance(p, (int, float)) and p > 0 for p in req.prices):
-            raise HTTPException(status_code=400, detail="Todos los precios deben ser numéricos y positivos")
-        return func(req)
-    return wrapper
-
 def run_cobol(program: str, input_data: str) -> str:
+    """Ejecuta COBOL y devuelve solo las líneas sin debug."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.dat', delete=False) as f:
         f.write(input_data)
         input_file = f.name
@@ -36,7 +27,9 @@ def run_cobol(program: str, input_data: str) -> str:
         result = subprocess.run([binary, input_file], capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
-        return result.stdout.strip()
+        lines = result.stdout.strip().split("\n")
+        data_lines = [l for l in lines if not l.startswith("[DEBUG]")]
+        return data_lines[-1] if data_lines else ""
     finally:
         os.unlink(input_file)
 
@@ -50,16 +43,21 @@ def make_indicator_endpoint(
     value_key: str = "value"
 ) -> Callable:
     """Factory de endpoints DRY: valida, ejecuta COBOL, procesa y persiste."""
-    @app.post(f"/{indicator}")
-    @require_valid_prices
-    @functools.wraps(processor)
     def endpoint(req: IndicatorRequest):
+        # Validación inline (evita problemas de inspección de FastAPI)
+        if not req.prices or len(req.prices) == 0:
+            raise HTTPException(status_code=400, detail="El campo 'prices' está vacío")
+        if not all(isinstance(p, (int, float)) and p > 0 for p in req.prices):
+            raise HTTPException(status_code=400, detail="Todos los precios deben ser numéricos y positivos")
+        
         data = run_cobol(indicator, "\n".join(f"{p:.2f}" for p in req.prices))
         result = processor(data)
         period = getattr(req, period_key, None) or period_default
         save_signal(indicator.upper(), req.symbol, result.get(value_key, 0), period, json.dumps(req.prices))
         return {**result, "symbol": req.symbol, period_key: period}
-    return endpoint
+    
+    endpoint.__name__ = f"{indicator}_endpoint"
+    app.post(f"/{indicator}")(endpoint)
 
 def sma_processor(data: str) -> Dict[str, Any]:
     return {"sma": float(data.strip())}
