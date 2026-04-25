@@ -3,41 +3,41 @@
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT PRICES-FILE ASSIGN TO DYNAMIC WS-PRICES-PATH
+           SELECT FD-PRICES-FILE ASSIGN TO DYNAMIC WS-PRICES-PATH
                ORGANIZATION IS LINE SEQUENTIAL
-               FILE STATUS IS WS-FS.
+               FILE STATUS IS WS-PRICES-STATUS.
        DATA DIVISION.
        FILE SECTION.
-       FD  PRICES-FILE.
-       01  PRICE-RECORD.
-           05 PRICE-HIGH-RAW PIC X(10).
-           05 FILLER         PIC X.
-           05 PRICE-LOW-RAW  PIC X(10).
-           05 FILLER         PIC X.
-           05 PRICE-CLOSE-RAW PIC X(10).
+       FD  FD-PRICES-FILE.
+       01  FD-PRICE-RECORD.
+           05 FD-PRICE-HIGH-RAW  PIC X(10).
+           05 FILLER             PIC X.
+           05 FD-PRICE-LOW-RAW   PIC X(10).
+           05 FILLER             PIC X.
+           05 FD-PRICE-CLOSE-RAW PIC X(10).
        WORKING-STORAGE SECTION.
-       01  WS-FS            PIC XX.
-           88  WS-FS-OK     VALUE "00".
-           88  WS-FS-EOF    VALUE "10".
-       01  WS-PRICES-PATH   PIC X(200).
+       01  WS-PRICES-STATUS   PIC XX.
+           88  WS-PRICES-OK           VALUE "00".
+           88  WS-PRICES-EOF          VALUE "10".
+       01  WS-PRICES-PATH     PIC X(200).
        01  WS-PRICES-TABLE.
            05 WS-PRICE-ENTRY OCCURS 1000 TIMES
-              INDEXED BY PRICE-IDX.
+              INDEXED BY WS-PRICE-IDX.
               10 WS-HIGH-COMP3   PIC 9(5)V99 COMP-3.
               10 WS-LOW-COMP3    PIC 9(5)V99 COMP-3.
               10 WS-CLOSE-COMP3  PIC 9(5)V99 COMP-3.
-       01  WS-COUNT         PIC 9(4) COMP.
-       01  WS-I             PIC 9(4) COMP.
-       01  WS-PERIOD        PIC 9(2) COMP VALUE 14.
-       01  WS-TRUE-RANGE    PIC 9(5)V99 COMP-3.
-       01  WS-ATR           PIC 9(5)V99 COMP-3.
-       01  WS-SUM-TR        PIC 9(10)V99 COMP-3.
-       01  WS-DIFF1         PIC 9(5)V99 COMP-3.
-       01  WS-DIFF2         PIC 9(5)V99 COMP-3.
-       01  WS-DIFF3         PIC 9(5)V99 COMP-3.
-       01  WS-MAX-DIFF      PIC 9(5)V99 COMP-3.
-       01  WS-PREV-CLOSE    PIC 9(5)V99 COMP-3.
-       01  WS-START-IDX     PIC 9(4) COMP.
+       01  WS-COUNT           PIC 9(4) COMP.
+       01  WS-I               PIC 9(4) COMP.
+       01  WS-PERIOD          PIC 9(2) COMP VALUE 14.
+       01  WS-TRUE-RANGE      PIC 9(5)V99 COMP-3.
+       01  WS-ATR             PIC 9(5)V99 COMP-3.
+       01  WS-SUM-TR          PIC 9(10)V99 COMP-3.
+       01  WS-DIFF1           PIC 9(5)V99 COMP-3.
+       01  WS-DIFF2           PIC 9(5)V99 COMP-3.
+       01  WS-DIFF3           PIC 9(5)V99 COMP-3.
+       01  WS-MAX-DIFF        PIC 9(5)V99 COMP-3.
+       01  WS-PREV-CLOSE      PIC 9(5)V99 COMP-3.
+       01  WS-START-IDX       PIC 9(4) COMP.
        PROCEDURE DIVISION.
        MAIN.
            PERFORM INPUT-PRICES.
@@ -55,26 +55,26 @@
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
            END-IF.
-           OPEN INPUT PRICES-FILE.
-           IF NOT WS-FS-OK
+           OPEN INPUT FD-PRICES-FILE.
+           IF NOT WS-PRICES-OK
                DISPLAY "ERROR: Cannot open " WS-PRICES-PATH
                STOP RUN
            END-IF.
            MOVE 0 TO WS-COUNT.
-           PERFORM UNTIL WS-FS-EOF
-               READ PRICES-FILE INTO PRICE-RECORD
-                   AT END SET WS-FS-EOF TO TRUE
+           PERFORM UNTIL WS-PRICES-EOF
+               READ FD-PRICES-FILE INTO FD-PRICE-RECORD
+                   AT END SET WS-PRICES-EOF TO TRUE
                    NOT AT END
                        ADD 1 TO WS-COUNT
                        COMPUTE WS-HIGH-COMP3(WS-COUNT) = 
-                           FUNCTION NUMVAL(PRICE-HIGH-RAW)
+                           FUNCTION NUMVAL(FD-PRICE-HIGH-RAW)
                        COMPUTE WS-LOW-COMP3(WS-COUNT) = 
-                           FUNCTION NUMVAL(PRICE-LOW-RAW)
+                           FUNCTION NUMVAL(FD-PRICE-LOW-RAW)
                        COMPUTE WS-CLOSE-COMP3(WS-COUNT) = 
-                           FUNCTION NUMVAL(PRICE-CLOSE-RAW)
+                           FUNCTION NUMVAL(FD-PRICE-CLOSE-RAW)
                END-READ
            END-PERFORM.
-           CLOSE PRICES-FILE.
+           CLOSE FD-PRICES-FILE.
 
        PROCESS-ATR.
            MOVE WS-CLOSE-COMP3(1) TO WS-PREV-CLOSE.
@@ -121,4 +121,4 @@
            END-PERFORM.
 
        CLEANUP.
-           CLOSE PRICES-FILE.
+           CLOSE FD-PRICES-FILE.

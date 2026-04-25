@@ -40,6 +40,12 @@ def health():
 
 @app.post("/sma")
 def sma(req: IndicatorRequest):
+    # B-VALID: validar entrada
+    if not req.prices or len(req.prices) == 0:
+        raise HTTPException(status_code=400, detail="El campo prices esta vacio")
+    if not all(isinstance(p, (int, float)) and p > 0 for p in req.prices):
+        raise HTTPException(status_code=400, detail="Todos los precios deben ser numericos y positivos")
+    
     data = run_cobol("sma", "\n".join(f"{p:.2f}" for p in req.prices))
     val = float(data)
     save_signal("SMA", req.symbol, val, req.window or 5, json.dumps(req.prices))

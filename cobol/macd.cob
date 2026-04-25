@@ -3,40 +3,40 @@
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT PRICES-FILE ASSIGN TO DYNAMIC WS-PRICES-PATH
+           SELECT FD-PRICES-FILE ASSIGN TO DYNAMIC WS-PRICES-PATH
                ORGANIZATION IS LINE SEQUENTIAL
-               FILE STATUS IS WS-FS.
+               FILE STATUS IS WS-PRICES-STATUS.
        DATA DIVISION.
        FILE SECTION.
-       FD  PRICES-FILE.
-       01  PRICE-RECORD.
-           05 PRICE-RAW      PIC X(10).
+       FD  FD-PRICES-FILE.
+       01  FD-PRICE-RECORD.
+           05 FD-PRICE-RAW      PIC X(10).
        WORKING-STORAGE SECTION.
-       01  WS-FS            PIC XX.
-           88  WS-FS-OK     VALUE "00".
-           88  WS-FS-EOF    VALUE "10".
-       01  WS-PRICES-PATH   PIC X(200).
+       01  WS-PRICES-STATUS   PIC XX.
+           88  WS-PRICES-OK           VALUE "00".
+           88  WS-PRICES-EOF          VALUE "10".
+       01  WS-PRICES-PATH     PIC X(200).
        01  WS-PRICES-TABLE.
            05 WS-PRICE-ENTRY OCCURS 1000 TIMES
-              INDEXED BY PRICE-IDX.
+              INDEXED BY WS-PRICE-IDX.
               10 WS-PRICE-COMP3 PIC 9(5)V99 COMP-3.
-       01  WS-COUNT         PIC 9(4) COMP.
-       01  WS-I             PIC 9(4) COMP.
-       01  WS-FAST          PIC 9(2) COMP VALUE 12.
-       01  WS-SLOW          PIC 9(2) COMP VALUE 26.
-       01  WS-SIGNAL        PIC 9(2) COMP VALUE 9.
-       01  WS-EMA-FAST      PIC 9(7)V99 COMP-3.
-       01  WS-EMA-SLOW      PIC 9(7)V99 COMP-3.
-       01  WS-EMA-SIGNAL    PIC 9(7)V99 COMP-3.
-       01  WS-MACD-LINE     PIC S9(7)V99 COMP-3.
-       01  WS-HISTOGRAM     PIC S9(7)V99 COMP-3.
-       01  WS-ALPHA-FAST    PIC V99.
-       01  WS-ALPHA-SLOW    PIC V99.
-       01  WS-ALPHA-SIGNAL  PIC V99.
-       01  WS-TEMP1         PIC 9(7)V99 COMP-3.
-       01  WS-TEMP2         PIC 9(7)V99 COMP-3.
-       01  WS-TEMP3         PIC 9(7)V99 COMP-3.
-       01  WS-TEMP4         PIC 9(7)V99 COMP-3.
+       01  WS-COUNT           PIC 9(4) COMP.
+       01  WS-I               PIC 9(4) COMP.
+       01  WS-FAST            PIC 9(2) COMP VALUE 12.
+       01  WS-SLOW            PIC 9(2) COMP VALUE 26.
+       01  WS-SIGNAL          PIC 9(2) COMP VALUE 9.
+       01  WS-EMA-FAST        PIC 9(7)V99 COMP-3.
+       01  WS-EMA-SLOW        PIC 9(7)V99 COMP-3.
+       01  WS-EMA-SIGNAL      PIC 9(7)V99 COMP-3.
+       01  WS-MACD-LINE       PIC S9(7)V99 COMP-3.
+       01  WS-HISTOGRAM       PIC S9(7)V99 COMP-3.
+       01  WS-ALPHA-FAST      PIC V99.
+       01  WS-ALPHA-SLOW      PIC V99.
+       01  WS-ALPHA-SIGNAL    PIC V99.
+       01  WS-TEMP1           PIC 9(7)V99 COMP-3.
+       01  WS-TEMP2           PIC 9(7)V99 COMP-3.
+       01  WS-TEMP3           PIC 9(7)V99 COMP-3.
+       01  WS-TEMP4           PIC 9(7)V99 COMP-3.
        PROCEDURE DIVISION.
        MAIN.
            PERFORM INPUT-PRICES.
@@ -54,22 +54,22 @@
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
            END-IF.
-           OPEN INPUT PRICES-FILE.
-           IF NOT WS-FS-OK
+           OPEN INPUT FD-PRICES-FILE.
+           IF NOT WS-PRICES-OK
                DISPLAY "ERROR: Cannot open " WS-PRICES-PATH
                STOP RUN
            END-IF.
            MOVE 0 TO WS-COUNT.
-           PERFORM UNTIL WS-FS-EOF
-               READ PRICES-FILE INTO PRICE-RECORD
-                   AT END SET WS-FS-EOF TO TRUE
+           PERFORM UNTIL WS-PRICES-EOF
+               READ FD-PRICES-FILE INTO FD-PRICE-RECORD
+                   AT END SET WS-PRICES-EOF TO TRUE
                    NOT AT END
                        ADD 1 TO WS-COUNT
                        COMPUTE WS-PRICE-COMP3(WS-COUNT) =
-                           FUNCTION NUMVAL(PRICE-RAW)
+                           FUNCTION NUMVAL(FD-PRICE-RAW)
                END-READ
            END-PERFORM.
-           CLOSE PRICES-FILE.
+           CLOSE FD-PRICES-FILE.
 
        PROCESS-MACD.
            COMPUTE WS-ALPHA-FAST = 2 / (WS-FAST + 1).
@@ -104,4 +104,4 @@
                WS-HISTOGRAM.
 
        CLEANUP.
-           CLOSE PRICES-FILE.
+           CLOSE FD-PRICES-FILE.

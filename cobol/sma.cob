@@ -1,76 +1,113 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. SMA.
+      * Indicador: Media Móvil Simple
+      * Versión:   B-DEBUG + B-FSTATUS + B-NAMING
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT PRICES-FILE ASSIGN TO DYNAMIC WS-PRICES-PATH
+           SELECT FD-PRICES-FILE ASSIGN TO DYNAMIC WS-PRICES-PATH
                ORGANIZATION IS LINE SEQUENTIAL
-               FILE STATUS IS WS-FS.
+               FILE STATUS IS WS-PRICES-STATUS.
        DATA DIVISION.
        FILE SECTION.
-       FD  PRICES-FILE.
-       01  PRICE-RECORD.
-           05 PRICE-RAW      PIC X(10).
+       FD  FD-PRICES-FILE.
+       01  FD-PRICE-RECORD.
+           05 FD-PRICE-RAW      PIC X(10).
        WORKING-STORAGE SECTION.
-       01  WS-FS            PIC XX.
-           88  WS-FS-OK     VALUE "00".
-           88  WS-FS-EOF    VALUE "10".
-       01  WS-PRICES-PATH   PIC X(200).
+       01  WS-PRICES-STATUS   PIC XX.
+           88  WS-PRICES-OK           VALUE "00".
+           88  WS-PRICES-EOF          VALUE "10".
+       01  WS-PRICES-PATH     PIC X(200).
        01  WS-PRICES-TABLE.
            05 WS-PRICE-ENTRY OCCURS 1000 TIMES
-              INDEXED BY PRICE-IDX.
+              INDEXED BY WS-PRICE-IDX.
               10 WS-PRICE-COMP3  PIC 9(5)V99 COMP-3.
-       01  WS-COUNT         PIC 9(4) COMP.
-       01  WS-I             PIC 9(4) COMP.
-       01  WS-WINDOW        PIC 9(2) COMP VALUE 5.
-       01  WS-SUM           PIC 9(10)V99 COMP-3.
-       01  WS-SMA           PIC 9(5)V99.
-       01  WS-START-IDX     PIC 9(4) COMP.
-       01  WS-END-IDX       PIC 9(4) COMP.
+       01  WS-COUNT           PIC 9(4) COMP VALUE 0.
+       01  WS-I               PIC 9(4) COMP.
+       01  WS-WINDOW          PIC 9(2) COMP VALUE 5.
+       01  WS-SUM             PIC 9(10)V99 COMP-3.
+       01  WS-SMA             PIC 9(5)V99.
+       01  WS-START-IDX       PIC 9(4) COMP.
+       01  WS-END-IDX         PIC 9(4) COMP.
+       01  WS-EXIT-CODE       PIC S9(4) COMP VALUE 0.
+       01  WS-ERROR-MSG       PIC X(100).
        PROCEDURE DIVISION.
        MAIN.
-           PERFORM INPUT-PRICES.
-           IF WS-COUNT < WS-WINDOW
-               DISPLAY "ERROR: Need at least " WS-WINDOW " prices"
-               PERFORM CLEANUP
-               STOP RUN
-           END-IF.
-           PERFORM PROCESS-SMA.
-           PERFORM CLEANUP.
-           STOP RUN.
-
-       INPUT-PRICES.
-           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE.
+           DISPLAY "[DEBUG] 1000-INICIO - Programa SMA iniciado"
+           ACCEPT WS-PRICES-PATH FROM COMMAND-LINE
            IF WS-PRICES-PATH = SPACES
                MOVE "prices.dat" TO WS-PRICES-PATH
-           END-IF.
-           OPEN INPUT PRICES-FILE.
-           IF NOT WS-FS-OK
-               DISPLAY "ERROR: Cannot open " WS-PRICES-PATH
+           END-IF
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leyendo archivo: " 
+               WS-PRICES-PATH
+           PERFORM 2000-LEER-PRECIOS
+           IF WS-EXIT-CODE NOT = 0
+               PERFORM 9000-FINALIZAR
                STOP RUN
-           END-IF.
-           MOVE 0 TO WS-COUNT.
-           PERFORM UNTIL WS-FS-EOF
-               READ PRICES-FILE INTO PRICE-RECORD
-                   AT END SET WS-FS-EOF TO TRUE
+           END-IF
+           DISPLAY "[DEBUG] 3000-CALCULAR-SMA - Procesando " WS-COUNT 
+               " precios con ventana " WS-WINDOW
+           PERFORM 3000-CALCULAR-SMA
+           DISPLAY "[DEBUG] 9000-FINALIZAR - Programa SMA finalizado"
+           PERFORM 9000-FINALIZAR
+           STOP RUN.
+
+       2000-LEER-PRECIOS.
+           OPEN INPUT FD-PRICES-FILE
+           IF NOT WS-PRICES-OK
+               PERFORM 9999-MANEJAR-ERROR-FS
+           END-IF
+           IF WS-EXIT-CODE NOT = 0
+               EXIT PARAGRAPH
+           END-IF
+           MOVE 0 TO WS-COUNT
+           PERFORM UNTIL WS-PRICES-EOF
+               READ FD-PRICES-FILE INTO FD-PRICE-RECORD
+                   AT END 
+                       SET WS-PRICES-EOF TO TRUE
                    NOT AT END
                        ADD 1 TO WS-COUNT
-                       COMPUTE WS-PRICE-COMP3(WS-COUNT) = 
-                           FUNCTION NUMVAL(PRICE-RAW)
+                       COMPUTE WS-PRICE-COMP3(WS-COUNT) ROUNDED = 
+                           FUNCTION NUMVAL(FD-PRICE-RAW)
                END-READ
-           END-PERFORM.
-           CLOSE PRICES-FILE.
+           END-PERFORM
+           DISPLAY "[DEBUG] 2000-LEER-PRECIOS - Leidos " WS-COUNT 
+               " registros"
+           CLOSE FD-PRICES-FILE
+           IF WS-COUNT = 0
+               MOVE "ERROR: Archivo vacío" TO WS-ERROR-MSG
+               DISPLAY WS-ERROR-MSG
+               MOVE 1 TO WS-EXIT-CODE
+           END-IF
+           EXIT.
 
-       PROCESS-SMA.
-           COMPUTE WS-START-IDX = WS-COUNT - WS-WINDOW + 1.
-           COMPUTE WS-END-IDX = WS-COUNT.
-           MOVE 0 TO WS-SUM.
+       3000-CALCULAR-SMA.
+           COMPUTE WS-START-IDX = WS-COUNT - WS-WINDOW + 1
+           COMPUTE WS-END-IDX = WS-COUNT
+           MOVE 0 TO WS-SUM
            PERFORM VARYING WS-I FROM WS-START-IDX BY 1
                    UNTIL WS-I > WS-END-IDX
                ADD WS-PRICE-COMP3(WS-I) TO WS-SUM
-           END-PERFORM.
-           COMPUTE WS-SMA = WS-SUM / WS-WINDOW.
-           DISPLAY WS-SMA.
+           END-PERFORM
+           COMPUTE WS-SMA ROUNDED = WS-SUM / WS-WINDOW
+           DISPLAY WS-SMA
+           EXIT.
 
-       CLEANUP.
-           CLOSE PRICES-FILE.
+       9000-FINALIZAR.
+           CLOSE FD-PRICES-FILE
+           EXIT.
+
+       9999-MANEJAR-ERROR-FS.
+           EVALUATE WS-PRICES-STATUS
+               WHEN "35"
+                   MOVE "ERROR: Archivo no encontrado" TO WS-ERROR-MSG
+               WHEN "39"
+                   MOVE "ERROR: Conflicto de atributos" TO WS-ERROR-MSG
+               WHEN OTHER
+                   STRING "ERROR: FILE STATUS = " WS-PRICES-STATUS
+                       INTO WS-ERROR-MSG
+           END-EVALUATE
+           DISPLAY WS-ERROR-MSG
+           MOVE 1 TO WS-EXIT-CODE
+           CLOSE FD-PRICES-FILE
+           EXIT.
