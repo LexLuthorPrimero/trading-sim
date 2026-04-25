@@ -59,3 +59,11 @@ Autor
 
 Lucas Cañete – Estudiante de Ingeniería Informática (UBA)
 GitHub | LinkedIn
+
+## Contrato entre Python y COBOL (Interfaz)
+
+- **Entrada para COBOL:** archivo de texto con un precio por línea (o formato `HIGH,LOW,CLOSE` para ATR y Stochastic).
+- **Salida de COBOL:** imprime líneas de debug (prefijo `[DEBUG]`) y en la última línea útil el valor calculado.
+- **Filtro en Python:** `run_cobol()` descarta las líneas que empiezan con `[DEBUG]` y devuelve solo la última línea útil.
+- **Código de error:** COBOL retorna `STOP RUN` con `WS‑EXIT‑CODE = 0` en éxito, `> 0` en error. Python verifica `returncode != 0` y lanza `RuntimeError`.
+- **Acoplamiento:** COBOL no conoce a Python. Python solo conoce el contrato de archivo + stdout + exit code.
