@@ -52,6 +52,10 @@ last_date=$(tail -1 "$SCRIPT_DIR/prices.dat" | cut -d',' -f1 2>/dev/null || echo
 echo "$(date +%s) $(date +%Y-%m-%d) $last_date" > "$CHECKPOINT_FILE"
 log "INFO" "Checkpoint guardado: último registro procesado $last_date"
 
+
+# --- B-FILEPROC: validar archivo de precios antes de COBOL ---
+log "INFO" "Validando archivo de precios..."
+"$SCRIPT_DIR/validate_prices.sh" "$SCRIPT_DIR/prices.dat" 10
 log "INFO" "Generando señales de cruce SMA…"
 "$COBOL_DIR/sma_cross" "$SCRIPT_DIR/prices.dat" > "$TEMP_SIGNALS"
 
