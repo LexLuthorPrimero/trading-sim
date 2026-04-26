@@ -126,10 +126,11 @@ ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 ALPACA_PAPER = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
 
-trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
+# Cliente de Alpaca se crea bajo demanda en los endpoints que lo necesitan.
 
 @app.get("/account")
 def get_account():
+    trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
     """Obtiene información de la cuenta de Alpaca."""
     if not ALPACA_API_KEY:
         raise HTTPException(status_code=500, detail="ALPACA_API_KEY no configurada")
