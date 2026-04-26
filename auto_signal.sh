@@ -66,6 +66,11 @@ echo "$(date +%s) $(date +%Y-%m-%d) $last_date" > "$CHECKPOINT_FILE"
 log "INFO" "Checkpoint guardado: último registro procesado $last_date"
 
 # --- B-FILEPROC: validar archivo de precios antes de COBOL ---
+
+# --- B-BACKUP: backup de archivos de datos antes de procesar ---
+log "INFO" "Haciendo backup de archivos de datos..."
+cp "$prices_file" "$prices_file.$(date +%Y%m%d_%H%M%S).bak"
+cp "$SCRIPT_DIR/data/trading.db" "$SCRIPT_DIR/data/trading.db.$(date +%Y%m%d_%H%M%S).bak" 2>/dev/null || true
 log "INFO" "Validando archivo de precios..."
 "$SCRIPT_DIR/validate_prices.sh" "$prices_file" 10
 
