@@ -48,16 +48,29 @@ log "INFO" "Descargando datos de $SYMBOL desde $START_DATE…"
 python3 "$SCRIPT_DIR/fetch_data.py" "$SYMBOL" "$PERIOD" "$START_DATE"
 
 # --- B-CHECKPOINT: Guardar progreso ---
-last_date=$(tail -1 "$SCRIPT_DIR/prices.dat" | cut -d',' -f1 2>/dev/null || echo "None")
+# --- B-STRMANIP: extraer último registro sin cut ---
+prices_file="$SCRIPT_DIR/prices.dat"
+last_line=$(tail -1 "$prices_file" 2>/dev/null || true)
+if [ -n "$last_line" ]; then
+    # El archivo prices.dat tiene formato YYYY-MM-DD,OPEN,HIGH,LOW,CLOSE,VOLUME
+    # Extraemos la fecha (primer campo antes de la primera coma)
+    last_date="${last_line%%,*}"
+    # Si no hay coma, asumimos que es solo un número (precio simple)
+    if [ "$last_date" = "$last_line" ]; then
+        last_date=$(date +%Y-%m-%d)
+    fi
+else
+    last_date="None"
+fi
 echo "$(date +%s) $(date +%Y-%m-%d) $last_date" > "$CHECKPOINT_FILE"
 log "INFO" "Checkpoint guardado: último registro procesado $last_date"
 
-
 # --- B-FILEPROC: validar archivo de precios antes de COBOL ---
 log "INFO" "Validando archivo de precios..."
-"$SCRIPT_DIR/validate_prices.sh" "$SCRIPT_DIR/prices.dat" 10
+"$SCRIPT_DIR/validate_prices.sh" "$prices_file" 10
+
 log "INFO" "Generando señales de cruce SMA…"
-"$COBOL_DIR/sma_cross" "$SCRIPT_DIR/prices.dat" > "$TEMP_SIGNALS"
+"$COBOL_DIR/sma_cross" "$prices_file" > "$TEMP_SIGNALS"
 
 log "INFO" "Ejecutando motor de backtesting…"
 metrics=$("$COBOL_DIR/trader" "$TEMP_SIGNALS")
@@ -68,5 +81,4 @@ curl -s -X POST "${API_URL}/decision?symbol=${SYMBOL}&period=${PERIOD}" \
   -H "Content-Type: application/json" | python3 -m json.tool
 
 log "INFO" "Script finalizado correctamente."
-# Si llega hasta acá, el checkpoint ya no es necesario (se procesó todo)
 rm -f "$CHECKPOINT_FILE"
